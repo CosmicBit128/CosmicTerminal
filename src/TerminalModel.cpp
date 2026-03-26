@@ -32,7 +32,6 @@ TerminalModel::TerminalModel(int w, int h, int buf_h, int cw, int ch)
 
     m_cursor_x = 0;
     m_cursor_y = 0;
-    m_top_row = 0;
 
     m_default_fg = rgbColor(220, 220, 220);
     m_default_bg = rgbColor(0, 0, 0);
@@ -48,17 +47,26 @@ void TerminalModel::resize(int new_width, int new_height) {
 }
 
 size_t TerminalModel::physicalRow(int logicalRow) const {
-    return static_cast<size_t>((m_top_row + logicalRow) % m_buf_height);
+    return static_cast<size_t>((logicalRow) % m_buf_height);
 }
+
+size_t TerminalModel::physicalRowWithOffset(int logicalRow) const {
+    int base = (m_buf_height + m_scroll_offset) % m_buf_height;
+    return static_cast<size_t>((base + logicalRow) % m_buf_height);
+}
+
 void TerminalModel::clearRow(int physicalRow) {
     std::fill_n(&(*m_active_buffer)[static_cast<size_t>(physicalRow) * m_width], m_width, TerminalCell{});
 }
 
+int TerminalModel::charOffset(int x, int y) const {
+    return physicalRow(y) * m_width + x;
+}
 TerminalCell& TerminalModel::cellAt(int x, int y) {
-    return (*m_active_buffer)[physicalRow(y) * m_width + x];
+    return (*m_active_buffer)[charOffset(x, y)];
 }
 const TerminalCell& TerminalModel::cellAt(int x, int y) const {
-    return (*m_active_buffer)[physicalRow(y) * m_width + x];
+    return (*m_active_buffer)[charOffset(x, y)];
 }
 
 void TerminalModel::putWrappedCodepoint(uint32_t cp) {
@@ -67,19 +75,27 @@ void TerminalModel::putWrappedCodepoint(uint32_t cp) {
         m_cursor_x = 0;
         ++m_cursor_y;
     }
-    if (m_cursor_y >= m_height) {
-        m_cursor_y = m_height - 1;
-        m_top_row = (m_top_row + 1) % m_buf_height;
-        clearRow(static_cast<int>(physicalRow(m_height - 1)));
-    }
+
+    bool wide = glyphIsWide && glyphIsWide(cp);
 
     TerminalCell& cell = cellAt(m_cursor_x, m_cursor_y);
     cell.codepoint = cp;
     cell.fg = m_current_fg;
     cell.bg = m_current_bg;
     cell.flags = m_current_flags;
+    if (wide) cell.flags |= CellWide;
 
     ++m_cursor_x;
+
+    if (wide && m_cursor_x < m_width) {
+        TerminalCell& pad = cellAt(m_cursor_x, m_cursor_y);
+        pad = TerminalCell{};
+        pad.codepoint = 32;
+        pad.fg = m_current_fg;
+        pad.bg = m_current_bg;
+        pad.flags = CellWidePad;
+        ++m_cursor_x;
+    }
 }
 
 void TerminalModel::putCodepoint(uint32_t codepoint) {
@@ -186,6 +202,7 @@ void TerminalModel::clearScreen(int mode) {
 }
 
 void TerminalModel::scrollRegionUp(int n) {
+    m_scroll_offset += n;
     int top = m_scroll_top;
     int bot = scrollBottom();
     n = std::clamp(n, 1, bot - top + 1);
@@ -204,6 +221,7 @@ void TerminalModel::scrollRegionUp(int n) {
 }
 
 void TerminalModel::scrollRegionDown(int n) {
+    m_scroll_offset -= n;
     int top = m_scroll_top;
     int bot = scrollBottom();
     n = std::clamp(n, 1, bot - top + 1);
@@ -218,6 +236,10 @@ void TerminalModel::scrollRegionDown(int n) {
         }
         clearRow(static_cast<int>(physicalRow(top)));
     }
+}
+
+void TerminalModel::adjustScrollOffset(int delta) {
+    m_scroll_offset = std::clamp(m_scroll_offset + delta, 0, m_buf_height - m_height);
 }
 
 void TerminalModel::saveCursor() {
@@ -255,7 +277,6 @@ void TerminalModel::setPrivateMode(int mode, bool enabled) {
 
                 m_cursor_x = 0;
                 m_cursor_y = 0;
-                m_top_row = 0;
 
                 std::fill(m_active_buffer->begin(), m_active_buffer->end(), TerminalCell{});
                 m_alt_screen = true;
@@ -280,7 +301,7 @@ std::vector<TerminalCell> TerminalModel::getVisibleScreen() const {
     std::vector<TerminalCell> visible(static_cast<size_t>(m_width) * m_height);
 
     for (int row = 0; row < m_height; ++row) {
-        size_t src_y = physicalRow(row);
+        size_t src_y = physicalRowWithOffset(row);
         for (int x = 0; x < m_width; ++x) {
             visible[static_cast<size_t>(row) * m_width + x] =
                 (*m_active_buffer)[src_y * m_width + x];

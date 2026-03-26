@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <iostream>
 #include <algorithm>
+#include <functional>
 
 
 static const uint8_t kAnsi256[256][3] = {
@@ -56,21 +57,23 @@ struct ColorSpec {
     uint8_t b = 0;
 };
 
-enum CellFlags : uint8_t {
+enum CellFlags : uint16_t {
     CellBold      = 1 << 0,
     CellItalic    = 1 << 1,
     CellUnderline = 1 << 2,
     CellBlink     = 1 << 3,
     CellReverse   = 1 << 4,
     CellHidden    = 1 << 5,
-    CellStrike    = 1 << 6
+    CellStrike    = 1 << 6,
+    CellWide      = 1 << 7,
+    CellWidePad   = 1 << 8
 };
 
 struct TerminalCell {
     uint32_t codepoint = 0;
     ColorSpec fg{};
     ColorSpec bg{};
-    uint8_t flags = 0;
+    uint16_t flags = 0;
 };
 
 
@@ -105,33 +108,39 @@ public:
 
     void saveCursor();
     void restoreCursor();
-
     void setCursorVisible(bool visible) { m_cursor_visible = visible; }
-    bool cursorVisible() const { return m_cursor_visible; }
-    bool cursorBlinkEnabled() const { return m_cursor_blink; }
-    bool applicationCursor() const {return m_application_cursor; }
-
-    ColorSpec resolveColor(const ColorSpec& c, bool isFg);
+    
     void setSGR(const std::vector<int>& args);
     void setPrivateMode(int mode, bool enabled);
+    void adjustScrollOffset(int delta);
 
-    std::vector<TerminalCell> getVisibleScreen() const;
-
+    bool cursorVisible() const { return m_cursor_visible; }
+    bool cursorBlinkEnabled() const { return m_cursor_blink; }
+    bool applicationCursor() const { return m_application_cursor; }
+    bool isAltScreen() const { return m_alt_screen; }
+    bool bracketedPaste() const { return m_bracketed_paste; }
+    
     int width() const { return m_width; }
     int height() const { return m_height; }
     int char_width() const { return m_char_width; }
     int char_height() const { return m_char_height; }
     int cursor_x() const { return m_cursor_x; }
     int cursor_y() const { return m_cursor_y; }
+    int scroll_y() const { return m_scroll_offset; }
+    int charOffset(int x, int y) const;
+    
+    ColorSpec resolveColor(const ColorSpec& c, bool isFg);
+    std::vector<TerminalCell> getVisibleScreen() const;
+    std::function<bool(uint32_t)> glyphIsWide;
 
 private:
     size_t physicalRow(int logicalRow) const;
+    size_t physicalRowWithOffset(int logicalRow) const;
     void clearRow(int physicalRow);
     TerminalCell& cellAt(int x, int y);
     const TerminalCell& cellAt(int x, int y) const;
     void putWrappedCodepoint(uint32_t cp);
 
-private:
     int scrollBottom() const { return m_scroll_bottom < 0 ? m_height - 1 : m_scroll_bottom; }
 
     int m_width;
@@ -144,7 +153,7 @@ private:
     int m_cursor_y = 0;
     int m_saved_cursor_x = 0;
     int m_saved_cursor_y = 0;
-    int m_top_row = 0;
+    int m_scroll_offset = 0;
     int m_scroll_top = 0;
     int m_scroll_bottom = -1;
 
@@ -158,12 +167,12 @@ private:
     ColorSpec m_default_bg{};
     ColorSpec m_current_fg{};
     ColorSpec m_current_bg{};
-    uint8_t m_current_flags = 0;
+    uint16_t m_current_flags = 0;
 
     int m_saved_top_row = 0;
     ColorSpec m_saved_fg{};
     ColorSpec m_saved_bg{};
-    uint8_t m_saved_flags = 0;
+    uint16_t m_saved_flags = 0;
 
     std::vector<TerminalCell> m_main_buffer;
     std::vector<TerminalCell> m_alt_buffer;

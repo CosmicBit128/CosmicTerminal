@@ -4,6 +4,8 @@
 #include <QSocketNotifier>
 #include <QByteArray>
 #include <QStringDecoder>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <unistd.h>
 
 
@@ -105,6 +107,10 @@ TerminalWidget::TerminalWidget(TerminalModel* model, QWidget* parent)
 m_glyphCache(model->char_width(), model->char_height(), 4096, 4096) {
     setFocusPolicy(Qt::StrongFocus);
 
+    m_model->glyphIsWide = [this](uint32_t cp) {
+        return m_glyphCache.isWide(cp);
+    };
+
     cursorTimer = new QTimer(this);
     connect(cursorTimer, &QTimer::timeout, this, [this]() {
         cursorVisible = !cursorVisible;
@@ -194,22 +200,34 @@ uniform ivec2 CellSize;
 uniform ivec2 CursorPos;
 uniform bool CursorVisible;
 
+uniform ivec2 SelStart;
+uniform ivec2 SelEnd;
+uniform bool HasSelection;
+
+
+bool inSelection(ivec2 cell, ivec2 screen_size) {
+    if (!HasSelection) return false;
+    int cellIdx = cell.y * screen_size.x + cell.x;
+    int selStartIdx = SelStart.y * screen_size.x + SelStart.x;
+    int selEndIdx   = SelEnd.y   * screen_size.x + SelEnd.x;
+    return cellIdx >= selStartIdx && cellIdx <= selEndIdx;
+}
+
 void main() {
     vec2 uv = UV;
     uv.y = 1.0 - uv.y;
 
-    
     ivec2 screenSize = textureSize(TextBuffer, 0);
     
     vec2 grid_uv = uv * vec2(screenSize);
     ivec2 cell = ivec2(grid_uv);
     vec2 cell_uv = fract(grid_uv);
-    uint codepoint = texelFetch(TextBuffer, cell, 0).r;
+    vec4 uvRect = texelFetch(GlyphUVs, cell, 0);
 
     uvec4 fgPack = texelFetch(AttrFGBuffer, cell, 0);
     uvec4 bgPack = texelFetch(AttrBGBuffer, cell, 0);
 
-    uint flags = fgPack.a;
+    uint flags = fgPack.a | (bgPack.a << 8u);
 
     vec4 fg = vec4(fgPack.rgb, 255.0) / 255.0;
     vec4 bg = vec4(bgPack.rgb, 255.0) / 255.0;
@@ -218,12 +236,16 @@ void main() {
         vec4 t = fg; fg = bg; bg = t;
     }
 
-    vec4 uvRect = texelFetch(GlyphUVs, cell, 0);
-    vec2 atlasCoord = mix(uvRect.xy, uvRect.zw, cell_uv);
+    vec2 sample_uv = cell_uv;
+    if ((flags & 128u) != 0u) sample_uv.x = cell_uv.x * 0.5;
+    if ((flags & 256u) != 0u) sample_uv.x = cell_uv.x * 0.5 + 0.5;
+
+    vec2 atlasCoord = mix(uvRect.xy, uvRect.zw, sample_uv);
     float alpha = texture(GlyphAtlas, atlasCoord).r;
 
     vec4 color = mix(bg, fg, alpha);
-    if (cell == CursorPos && CursorVisible) { color.rgb = vec3(1.0) - color.rgb; }
+    if (cell == CursorPos && CursorVisible) color.rgb = vec3(1.0) - color.rgb;
+    if (inSelection(cell, screenSize)) color.rgb += vec3(0.07,0.1,0.2);
 
     fragColor = color;
 }
@@ -348,12 +370,12 @@ void TerminalWidget::paintGL() {
         screenFg[i * 4 + 0] = fg_r.r;
         screenFg[i * 4 + 1] = fg_r.g;
         screenFg[i * 4 + 2] = fg_r.b;
-        screenFg[i * 4 + 3] = c.flags; // flags live here
+        screenFg[i * 4 + 3] = static_cast<uint8_t>(c.flags & 0xFF);
 
         screenBg[i * 4 + 0] = bg_r.r;
         screenBg[i * 4 + 1] = bg_r.g;
         screenBg[i * 4 + 2] = bg_r.b;
-        screenBg[i * 4 + 3] = 0;
+        screenBg[i * 4 + 3] = static_cast<uint8_t>((c.flags >> 8) & 0xFF);
 
         // Resolve UVs
         GlyphStyle style = GlyphStyle::Regular;
@@ -362,12 +384,20 @@ void TerminalWidget::paintGL() {
         else if (c.flags & CellItalic) style = GlyphStyle::Italic;
 
         GlyphRect r{0, 0, 0, 0, false};
+        if ((c.flags & CellWidePad)) continue;
         if (c.codepoint != 0)
             r = m_glyphCache.get(c.codepoint, style);
         m_glyphUVs[i*4+0] = r.u0;
         m_glyphUVs[i*4+1] = r.v0;
         m_glyphUVs[i*4+2] = r.u1;
         m_glyphUVs[i*4+3] = r.v1;
+
+        if ((c.flags & CellWide) && i + 1 < cellCount) {
+            m_glyphUVs[(i+1)*4+0] = r.u0;
+            m_glyphUVs[(i+1)*4+1] = r.v0;
+            m_glyphUVs[(i+1)*4+2] = r.u1;
+            m_glyphUVs[(i+1)*4+3] = r.v1;
+        }
     }
 
     glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
@@ -380,11 +410,16 @@ void TerminalWidget::paintGL() {
     program.setUniformValue("AttrBGBuffer", 2);
     program.setUniformValue("GlyphAtlas", 3);
     program.setUniformValue("GlyphUVs", 4);
-    program.setUniformValue("CursorVisible", cursorVisible && m_model->cursorVisible() && m_model->cursorBlinkEnabled() );
+    program.setUniformValue("CursorVisible", cursorVisible && m_model->cursorVisible() && m_model->cursorBlinkEnabled());
+    program.setUniformValue("HasSelection", m_hasSelection);
     GLint cursorPosLoc = program.uniformLocation("CursorPos");
     GLint cellSizeLoc = program.uniformLocation("CellSize");
-    if (cursorPosLoc >= 0) glUniform2i(cursorPosLoc, m_model->cursor_x(), m_model->cursor_y());
+    GLint selStartLoc = program.uniformLocation("SelStart");
+    GLint selEndLoc = program.uniformLocation("SelEnd");
+    if (cursorPosLoc >= 0) glUniform2i(cursorPosLoc, m_model->cursor_x(), m_model->cursor_y() - m_model->scroll_y());
     if (cellSizeLoc >= 0) glUniform2i(cellSizeLoc, m_model->char_width(), m_model->char_height());
+    if (selStartLoc >= 0) glUniform2i(selStartLoc, m_selStart.x(), m_selStart.y() - m_model->scroll_y());
+    if (selEndLoc >= 0) glUniform2i(selEndLoc, m_selEnd.x(), m_selEnd.y() - m_model->scroll_y());
 
 
     glActiveTexture(GL_TEXTURE0);
@@ -424,7 +459,27 @@ void TerminalWidget::paintGL() {
     program.release();
 }
 
+QPoint TerminalWidget::getCellPos(QPointF position) {
+    QPoint p;
+    p.setX((int)(position.x() / m_model->char_width()));
+    p.setY((int)(position.y() / m_model->char_height()));
+    return p;
+}
+
+// --- Events ---
 void TerminalWidget::keyPressEvent(QKeyEvent* event) {
+    Qt::KeyboardModifiers mods = event->modifiers();
+
+    if (mods == (Qt::ControlModifier | Qt::ShiftModifier)) {
+        switch (event->key()) {
+            case Qt::Key_C: copySelection(); return;
+            case Qt::Key_V: paste(); return;
+            case Qt::Key_T: emit requestNewTab(); return;
+            case Qt::Key_N: emit requestNewWindow(); return;
+            default: break;
+        }
+    }
+
     if (m_masterFd < 0) return;
 
     QByteArray bytes;
@@ -455,4 +510,80 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event) {
 
 void TerminalWidget::keyReleaseEvent(QKeyEvent *event) {
     Q_UNUSED(event);
+}
+
+void TerminalWidget::wheelEvent(QWheelEvent* event) {
+    if (m_model->isAltScreen()) {
+        // send arrow keys to shell
+        QByteArray seq = (event->angleDelta().y() > 0)
+            ? "\x1b[A\x1b[A\x1b[A" : "\x1b[B\x1b[B\x1b[B";
+        ::write(m_masterFd, seq.constData(), seq.size());
+        return;
+    }
+    int delta = event->angleDelta().y() > 0 ? 3 : -3;
+    m_model->adjustScrollOffset(-delta);
+    update();
+}
+
+void TerminalWidget::mousePressEvent(QMouseEvent *event) {
+    QPoint mouse_cell = getCellPos(event->pos());
+    m_selStart = mouse_cell;
+    m_hasSelection = true;
+}
+
+void TerminalWidget::mouseMoveEvent(QMouseEvent *event) {
+    QPoint mouse_cell = getCellPos(event->pos());
+    m_selEnd = mouse_cell;
+    update();
+}
+
+void TerminalWidget::mouseReleaseEvent(QMouseEvent *event) {
+    QPoint mouse_cell = getCellPos(event->pos());
+    if (mouse_cell == m_selStart) m_hasSelection = false;
+    else m_selEnd = mouse_cell;
+    update();
+}
+
+
+// --- Copy & Paste ---
+void TerminalWidget::copySelection() {
+    auto visible = m_model->getVisibleScreen();
+    QString text;
+
+    int width = m_model->width();
+    int sel_end = m_model->charOffset(m_selEnd.x(), m_selEnd.y());
+    int sel_start = m_model->charOffset(m_selStart.x(), m_selStart.y());
+
+    for (int i = 0; i < sel_end - sel_start; i++) {
+        int offset = sel_start + i;
+        
+        if (i > 0 && (sel_start + i) % width == 0)
+            text += '\n';
+        
+        uint32_t cp = visible.at(offset).codepoint;
+        if (cp != 0) text += QString::fromUcs4(&cp, 1);
+    }
+    QGuiApplication::clipboard()->setText(text);
+}
+
+void TerminalWidget::paste() {
+    QString text = QGuiApplication::clipboard()->text();
+    QByteArray bytes = text.toUtf8();
+    if (m_model->bracketedPaste()) {
+        ::write(m_masterFd, "\x1b[200~", 6);
+        ::write(m_masterFd, bytes.constData(), bytes.size());
+        ::write(m_masterFd, "\x1b[201~", 6);
+    } else {
+        ::write(m_masterFd, bytes.constData(), bytes.size());
+    }
+}
+
+
+// --- Signals ---
+void TerminalWidget::requestNewTab() {
+    
+}
+
+void TerminalWidget::requestNewWindow() {
+    
 }

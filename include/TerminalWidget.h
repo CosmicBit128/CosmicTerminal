@@ -56,8 +56,19 @@ protected:
     void initializeGL() override;
     void resizeGL(int w, int h) override;
     void paintGL() override;
+
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
+
+    void wheelEvent(QWheelEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+
+    void copySelection();
+    void paste();
+
+    QPoint getCellPos(QPointF position);
 
 private:
     TerminalParser parser;
@@ -89,8 +100,15 @@ private:
     int glyphCols = 16;
     int glyphRows = 6;
 
+    QPoint m_selStart;
+    QPoint m_selEnd;
+    bool m_hasSelection = false;
+
     int m_masterFd = -1;
     QSocketNotifier* m_ptyNotifier = nullptr;
     QStringDecoder m_decoder{QStringDecoder::Utf8};
     pid_t m_shellPid = -1;
+signals:
+    void requestNewTab();
+    void requestNewWindow();
 };

@@ -20,6 +20,7 @@ public:
     GLuint texture() const { return m_tex; }
     int atlasW()    const { return m_atlasW; }
     int atlasH()    const { return m_atlasH; }
+    bool isWide(uint32_t cp);
 
 private:
     GlyphRect upload(uint32_t codepoint, GlyphStyle style);
