@@ -14,9 +14,9 @@ find_package(Freetype REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
 
-
 file(GLOB_RECURSE SOURCES
     "${CMAKE_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_SOURCE_DIR}/include/*.h"
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -34,5 +34,3 @@ target_link_libraries(${PROJECT_NAME}
     util
     ${FONTCONFIG_LIBRARIES}
 )
-
-# target_compile_options(${PROJECT_NAME} PRIVATE ${FONTCONFIG_CFLAGS_OTHER})

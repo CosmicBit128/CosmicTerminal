@@ -1,11 +1,10 @@
 #include "TerminalWidget.h"
 #include "TerminalModel.h"
-#include "GlyphCache.h"
+
 #include <QSocketNotifier>
 #include <QByteArray>
 #include <QStringDecoder>
 #include <QClipboard>
-#include <QGuiApplication>
 #include <unistd.h>
 
 
@@ -102,14 +101,11 @@ auto uploadAtlas = [](GLuint& tex, const Atlas& a) {
 };
 
 
-TerminalWidget::TerminalWidget(TerminalModel* model, QWidget* parent)
-:QOpenGLWidget(parent), m_model(model), parser(*model),
-m_glyphCache(model->char_width(), model->char_height(), 4096, 4096) {
+TerminalWidget::TerminalWidget(QWidget* parent)
+    : QOpenGLWidget(parent),
+      m_glyphCache(m_charWidth, m_charHeight, 4096, 4096)
+{
     setFocusPolicy(Qt::StrongFocus);
-
-    m_model->glyphIsWide = [this](uint32_t cp) {
-        return m_glyphCache.isWide(cp);
-    };
 
     cursorTimer = new QTimer(this);
     connect(cursorTimer, &QTimer::timeout, this, [this]() {
@@ -117,44 +113,6 @@ m_glyphCache(model->char_width(), model->char_height(), 4096, 4096) {
         update();
     });
     cursorTimer->start(500);
-
-    int glyph_w = 8;
-    int glyph_h = 16;
-    int cols = 16;
-    int rows = 16;
-
-    int atlas_w = cols * m_model->char_width();
-    int atlas_h = rows * m_model->char_height();
-
-    std::vector<unsigned char> atlas(atlas_w * atlas_h, 0);
-
-    struct winsize ws{};
-    ws.ws_col = m_model->width();
-    ws.ws_row = m_model->height();
-    ws.ws_xpixel = m_model->width()  * m_model->char_width();
-    ws.ws_ypixel = m_model->height() * m_model->char_height();
-
-    m_shellPid = forkpty(&m_masterFd, nullptr, nullptr, &ws);
-    if (m_shellPid == 0) {
-        setenv("TERM", "xterm-256color", 1);
-        setenv("COLORTERM", "truecolor", 1);
-        execl("/bin/zsh", "zsh", nullptr);
-        _exit(1);
-    }
-
-    m_ptyNotifier = new QSocketNotifier(m_masterFd, QSocketNotifier::Read, this);
-    connect(m_ptyNotifier, &QSocketNotifier::activated, this, [this]() {
-        char buf[4096];
-        ssize_t n = ::read(m_masterFd, buf, sizeof(buf));
-        if (n <= 0) {
-            m_ptyNotifier->setEnabled(false);
-            QMetaObject::invokeMethod(qApp, "quit", Qt::QueuedConnection);
-            return;
-        }
-        QString text = m_decoder.decode(QByteArray(buf, static_cast<int>(n)));
-        parser.feed(text);
-        update();
-    });
 }
 
 TerminalWidget::~TerminalWidget() {
@@ -270,7 +228,7 @@ void main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F,
-                m_model->width(), m_model->height(),
+                m_tab->model->width(), m_tab->model->height(),
                 0, GL_RGBA, GL_FLOAT, nullptr);
 
 
@@ -293,15 +251,15 @@ void main() {
     int glyphCols = 16;
     int glyphRows = 6;
 
-    int cellW = m_model->char_width();
-    int cellH = m_model->char_height();
+    int cellW = m_tab->model->char_width();
+    int cellH = m_tab->model->char_height();
 
     glGenTextures(1, &textTexture);
     glBindTexture(GL_TEXTURE_2D, textTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI,
-                m_model->width(), m_model->height(),
+                m_tab->model->width(), m_tab->model->height(),
                 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
 
     glGenTextures(1, &attrFgTexture);
@@ -309,7 +267,7 @@ void main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI,
-                m_model->width(), m_model->height(),
+                m_tab->model->width(), m_tab->model->height(),
                 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, nullptr);
 
     glGenTextures(1, &attrBgTexture);
@@ -317,7 +275,7 @@ void main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI,
-                m_model->width(), m_model->height(),
+                m_tab->model->width(), m_tab->model->height(),
                 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, nullptr);
 
     m_glyphCache.init(face, bface);
@@ -336,24 +294,29 @@ void main() {
 void TerminalWidget::resizeGL(int w, int h) {
     glViewport(0, 0, w, h);
 
-    int cols = w / m_model->char_width();
-    int rows = h / m_model->char_height();
-    m_model->resize(cols, rows);
+    int cols = w / m_tab->model->char_width();
+    int rows = h / m_tab->model->char_height();
+    m_tab->model->resize(cols, rows);
 
-    if (m_masterFd >= 0) {
+    if (m_tab->masterFd >= 0) {
         struct winsize ws{};
         ws.ws_col = cols;
         ws.ws_row = rows;
         ws.ws_xpixel = w;
         ws.ws_ypixel = h;
-        ioctl(m_masterFd, TIOCSWINSZ, &ws);
+        ioctl(m_tab->masterFd, TIOCSWINSZ, &ws);
     }
 }
 
 void TerminalWidget::paintGL() {
-    auto visible = m_model->getVisibleScreen();
+    if (!m_tab || !m_tab->model) {
+        glClearColor(1.00f, 0.05f, 0.05f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        return;
+    }
+    auto visible = m_tab->model->getVisibleScreen();
 
-    const size_t cellCount = static_cast<size_t>(m_model->width()) * m_model->height();
+    const size_t cellCount = static_cast<size_t>(m_tab->model->width()) * m_tab->model->height();
     screenCodepoints.resize(cellCount);
     screenFg.resize(cellCount * 4);
     screenBg.resize(cellCount * 4);
@@ -364,8 +327,8 @@ void TerminalWidget::paintGL() {
         screenCodepoints[i] = c.codepoint;
 
         // Resolve colors
-        ColorSpec fg_r = m_model->resolveColor(c.fg, true);
-        ColorSpec bg_r = m_model->resolveColor(c.bg, false);
+        ColorSpec fg_r = m_tab->model->resolveColor(c.fg, true);
+        ColorSpec bg_r = m_tab->model->resolveColor(c.bg, false);
 
         screenFg[i * 4 + 0] = fg_r.r;
         screenFg[i * 4 + 1] = fg_r.g;
@@ -410,41 +373,41 @@ void TerminalWidget::paintGL() {
     program.setUniformValue("AttrBGBuffer", 2);
     program.setUniformValue("GlyphAtlas", 3);
     program.setUniformValue("GlyphUVs", 4);
-    program.setUniformValue("CursorVisible", cursorVisible && m_model->cursorVisible() && m_model->cursorBlinkEnabled());
+    program.setUniformValue("CursorVisible", cursorVisible && m_tab->model->cursorVisible() && m_tab->model->cursorBlinkEnabled());
     program.setUniformValue("HasSelection", m_hasSelection);
     GLint cursorPosLoc = program.uniformLocation("CursorPos");
     GLint cellSizeLoc = program.uniformLocation("CellSize");
     GLint selStartLoc = program.uniformLocation("SelStart");
     GLint selEndLoc = program.uniformLocation("SelEnd");
-    if (cursorPosLoc >= 0) glUniform2i(cursorPosLoc, m_model->cursor_x(), m_model->cursor_y() - m_model->scroll_y());
-    if (cellSizeLoc >= 0) glUniform2i(cellSizeLoc, m_model->char_width(), m_model->char_height());
-    if (selStartLoc >= 0) glUniform2i(selStartLoc, m_selStart.x(), m_selStart.y() - m_model->scroll_y());
-    if (selEndLoc >= 0) glUniform2i(selEndLoc, m_selEnd.x(), m_selEnd.y() - m_model->scroll_y());
+    if (cursorPosLoc >= 0) glUniform2i(cursorPosLoc, m_tab->model->cursor_x(), m_tab->model->cursor_y() - m_tab->model->scroll_y());
+    if (cellSizeLoc >= 0) glUniform2i(cellSizeLoc, m_tab->model->char_width(), m_tab->model->char_height());
+    if (selStartLoc >= 0) glUniform2i(selStartLoc, m_selStart.x(), m_selStart.y() - m_tab->model->scroll_y());
+    if (selEndLoc >= 0) glUniform2i(selEndLoc, m_selEnd.x(), m_selEnd.y() - m_tab->model->scroll_y());
 
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_model->width(), m_model->height(),
+        m_tab->model->width(), m_tab->model->height(),
         GL_RED_INTEGER, GL_UNSIGNED_INT,
         screenCodepoints.data() );
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, attrFgTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_model->width(), m_model->height(),
+        m_tab->model->width(), m_tab->model->height(),
         GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, screenFg.data() );
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, attrBgTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_model->width(), m_model->height(),
+        m_tab->model->width(), m_tab->model->height(),
         GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, screenBg.data() );
 
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, m_glyphCache.texture());
     glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D, m_glyphUVTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_model->width(), m_model->height(),
+        m_tab->model->width(), m_tab->model->height(),
         GL_RGBA, GL_FLOAT, m_glyphUVs.data() );
 
     glBindVertexArray(vao);
@@ -461,8 +424,8 @@ void TerminalWidget::paintGL() {
 
 QPoint TerminalWidget::getCellPos(QPointF position) {
     QPoint p;
-    p.setX((int)(position.x() / m_model->char_width()));
-    p.setY((int)(position.y() / m_model->char_height()));
+    p.setX((int)(position.x() / m_tab->model->char_width()));
+    p.setY((int)(position.y() / m_tab->model->char_height()));
     return p;
 }
 
@@ -480,7 +443,7 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event) {
         }
     }
 
-    if (m_masterFd < 0) return;
+    if (m_tab->masterFd < 0) return;
 
     QByteArray bytes;
 
@@ -490,10 +453,10 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event) {
         case Qt::Key_Enter:     bytes = "\r";       break;
         case Qt::Key_Backspace: bytes = "\x7f";     break;
         case Qt::Key_Tab:       bytes = "\t";       break;
-        case Qt::Key_Up:    bytes = m_model->applicationCursor() ? "\x1bOA" : "\x1b[A"; break;
-        case Qt::Key_Down:  bytes = m_model->applicationCursor() ? "\x1bOB" : "\x1b[B"; break;
-        case Qt::Key_Right: bytes = m_model->applicationCursor() ? "\x1bOC" : "\x1b[C"; break;
-        case Qt::Key_Left:  bytes = m_model->applicationCursor() ? "\x1bOD" : "\x1b[D"; break;
+        case Qt::Key_Up:    bytes = m_tab->model->applicationCursor() ? "\x1bOA" : "\x1b[A"; break;
+        case Qt::Key_Down:  bytes = m_tab->model->applicationCursor() ? "\x1bOB" : "\x1b[B"; break;
+        case Qt::Key_Right: bytes = m_tab->model->applicationCursor() ? "\x1bOC" : "\x1b[C"; break;
+        case Qt::Key_Left:  bytes = m_tab->model->applicationCursor() ? "\x1bOD" : "\x1b[D"; break;
         case Qt::Key_Home:      bytes = "\x1b[H";   break;
         case Qt::Key_End:       bytes = "\x1b[F";   break;
         case Qt::Key_Delete:    bytes = "\x1b[3~";  break;
@@ -505,7 +468,7 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event) {
     }
 
     if (!bytes.isEmpty())
-        ::write(m_masterFd, bytes.constData(), bytes.size());
+        ::write(m_tab->masterFd, bytes.constData(), bytes.size());
 }
 
 void TerminalWidget::keyReleaseEvent(QKeyEvent *event) {
@@ -513,15 +476,15 @@ void TerminalWidget::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void TerminalWidget::wheelEvent(QWheelEvent* event) {
-    if (m_model->isAltScreen()) {
+    if (m_tab->model->isAltScreen()) {
         // send arrow keys to shell
         QByteArray seq = (event->angleDelta().y() > 0)
             ? "\x1b[A\x1b[A\x1b[A" : "\x1b[B\x1b[B\x1b[B";
-        ::write(m_masterFd, seq.constData(), seq.size());
+        ::write(m_tab->masterFd, seq.constData(), seq.size());
         return;
     }
     int delta = event->angleDelta().y() > 0 ? 3 : -3;
-    m_model->adjustScrollOffset(-delta);
+    m_tab->model->adjustScrollOffset(-delta);
     update();
 }
 
@@ -547,12 +510,12 @@ void TerminalWidget::mouseReleaseEvent(QMouseEvent *event) {
 
 // --- Copy & Paste ---
 void TerminalWidget::copySelection() {
-    auto visible = m_model->getVisibleScreen();
+    auto visible = m_tab->model->getVisibleScreen();
     QString text;
 
-    int width = m_model->width();
-    int sel_end = m_model->charOffset(m_selEnd.x(), m_selEnd.y());
-    int sel_start = m_model->charOffset(m_selStart.x(), m_selStart.y());
+    int width = m_tab->model->width();
+    int sel_end = m_tab->model->charOffset(m_selEnd.x(), m_selEnd.y());
+    int sel_start = m_tab->model->charOffset(m_selStart.x(), m_selStart.y());
 
     for (int i = 0; i < sel_end - sel_start; i++) {
         int offset = sel_start + i;
@@ -569,21 +532,33 @@ void TerminalWidget::copySelection() {
 void TerminalWidget::paste() {
     QString text = QGuiApplication::clipboard()->text();
     QByteArray bytes = text.toUtf8();
-    if (m_model->bracketedPaste()) {
-        ::write(m_masterFd, "\x1b[200~", 6);
-        ::write(m_masterFd, bytes.constData(), bytes.size());
-        ::write(m_masterFd, "\x1b[201~", 6);
+    if (m_tab->model->bracketedPaste()) {
+        ::write(m_tab->masterFd, "\x1b[200~", 6);
+        ::write(m_tab->masterFd, bytes.constData(), bytes.size());
+        ::write(m_tab->masterFd, "\x1b[201~", 6);
     } else {
-        ::write(m_masterFd, bytes.constData(), bytes.size());
+        ::write(m_tab->masterFd, bytes.constData(), bytes.size());
     }
 }
 
-
-// --- Signals ---
-void TerminalWidget::requestNewTab() {
-    
+void TerminalWidget::onPtyReadable() {
+    char buf[4096];
+    ssize_t n = ::read(m_tab->masterFd, buf, sizeof(buf));
+    if (n <= 0) {
+        m_tab->notifier->setEnabled(false);
+        return;
+    }
+    QString text = m_tab->decoder.decode(QByteArray(buf, static_cast<int>(n)));
+    m_tab->parser->feed(text);
+    update();
 }
 
-void TerminalWidget::requestNewWindow() {
-    
+void TerminalWidget::setTab(TerminalTab* tab) {
+    if (m_tab && m_tab->notifier) disconnect(m_tab->notifier, &QSocketNotifier::activated, this, &TerminalWidget::onPtyReadable);
+
+    m_tab = tab;
+
+    if (m_tab && m_tab->notifier) connect(m_tab->notifier, &QSocketNotifier::activated, this, &TerminalWidget::onPtyReadable);
+
+    update();
 }

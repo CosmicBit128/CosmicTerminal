@@ -1,6 +1,6 @@
 #include <QApplication>
-#include "TerminalWidget.h"
-#include "TerminalModel.h"
+#include <QTimer>
+#include "TerminalWindow.h"
 
 int main(int argc, char *argv[]) {
     int width = 128;
@@ -13,13 +13,13 @@ int main(int argc, char *argv[]) {
     int window_height = height * char_height;
     
     QApplication app(argc, argv);
-    
-    TerminalModel model(width, height, buf_height, char_width, char_height);
 
-    TerminalWidget window(&model);
+    TerminalWindow window;
     window.setWindowTitle("Cosmic Terminal");
     window.resize(window_width, window_height);
     window.show();
+
+    // QTimer::singleShot(0, &window, [&window]{ window.createTab(); });
 
     return app.exec();
 }
