@@ -62,6 +62,7 @@ public:
     int charHeight() const { return m_charHeight; }
 
 signals:
+    void tabClosed();
     void requestNewTab();
     void requestNewWindow();
 
@@ -89,6 +90,15 @@ private:
 
     TerminalTab* m_tab = nullptr;
 
+    int m_charWidth  = 9;
+    int m_charHeight = 18;
+    int m_cols       = 128;
+    int m_rows       = 32;
+    
+    int glyphW = 7;
+    int glyphH = 14;
+    int glyphCols = 16;
+
     GlyphCache m_glyphCache;
     QOpenGLShaderProgram program;
     GLuint vao = 0, vbo = 0;
@@ -108,15 +118,6 @@ private:
     
     QTimer* cursorTimer;
     bool cursorVisible = true;
-
-    int m_charWidth  = 9;
-    int m_charHeight = 18;
-    int m_cols       = 128;
-    int m_rows       = 32;
-    
-    int glyphW = 7;
-    int glyphH = 14;
-    int glyphCols = 16;
 
     QPoint m_selStart;
     QPoint m_selEnd;

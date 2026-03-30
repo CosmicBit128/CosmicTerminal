@@ -223,43 +223,12 @@ void main() {
         -1.0f,  1.0f
     };
 
-    glGenTextures(1, &m_glyphUVTexture);
-    glBindTexture(GL_TEXTURE_2D, m_glyphUVTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F,
-                m_tab->model->width(), m_tab->model->height(),
-                0, GL_RGBA, GL_FLOAT, nullptr);
-
-
-    // --- Build glyph atlas ---
-    if (FT_Init_FreeType(&ft)) {
-        throw std::runtime_error("FT_Init_FreeType failed");
-    }
-    
-    FT_New_Face(ft,
-        find_font(preferred_fonts, FC_WEIGHT_REGULAR).c_str(),
-        0, &face
-    );
-    FT_Set_Pixel_Sizes(face, 0, glyphH);
-    FT_New_Face(ft,
-        find_font(preferred_fonts, FC_WEIGHT_BOLD).c_str(),
-        0, &bface
-    );
-    FT_Set_Pixel_Sizes(bface, 0, glyphH);
-
-    int glyphCols = 16;
-    int glyphRows = 6;
-
-    int cellW = m_tab->model->char_width();
-    int cellH = m_tab->model->char_height();
-
     glGenTextures(1, &textTexture);
     glBindTexture(GL_TEXTURE_2D, textTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI,
-                m_tab->model->width(), m_tab->model->height(),
+                m_cols, m_rows,
                 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
 
     glGenTextures(1, &attrFgTexture);
@@ -267,7 +236,7 @@ void main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI,
-                m_tab->model->width(), m_tab->model->height(),
+                m_cols, m_rows,
                 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, nullptr);
 
     glGenTextures(1, &attrBgTexture);
@@ -275,9 +244,26 @@ void main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI,
-                m_tab->model->width(), m_tab->model->height(),
+                m_cols, m_rows,
                 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, nullptr);
 
+    glGenTextures(1, &m_glyphUVTexture);
+    glBindTexture(GL_TEXTURE_2D, m_glyphUVTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F,
+                m_cols, m_rows,
+                0, GL_RGBA, GL_FLOAT, nullptr);
+
+    // --- Build glyph atlas ---
+    if (FT_Init_FreeType(&ft))
+        throw std::runtime_error("FT_Init_FreeType failed");
+    
+    FT_New_Face(ft, find_font(preferred_fonts, FC_WEIGHT_REGULAR).c_str(), 0, &face);
+    FT_Set_Pixel_Sizes(face, 0, glyphH);
+    FT_New_Face(ft, find_font(preferred_fonts, FC_WEIGHT_BOLD).c_str(), 0, &bface);
+    FT_Set_Pixel_Sizes(bface, 0, glyphH);
+    
     m_glyphCache.init(face, bface);
 
     // --- Render ---
@@ -293,30 +279,26 @@ void main() {
 
 void TerminalWidget::resizeGL(int w, int h) {
     glViewport(0, 0, w, h);
+    m_cols = w / m_charWidth;
+    m_rows = h / m_charHeight;
 
-    int cols = w / m_tab->model->char_width();
-    int rows = h / m_tab->model->char_height();
-    m_tab->model->resize(cols, rows);
-
-    if (m_tab->masterFd >= 0) {
-        struct winsize ws{};
-        ws.ws_col = cols;
-        ws.ws_row = rows;
-        ws.ws_xpixel = w;
-        ws.ws_ypixel = h;
-        ioctl(m_tab->masterFd, TIOCSWINSZ, &ws);
+    if (m_tab && m_tab->model) {
+        m_tab->model->resize(m_cols, m_rows);
+        if (m_tab->masterFd >= 0) {
+            struct winsize ws{};
+            ws.ws_col = m_cols;
+            ws.ws_row = m_rows;
+            ws.ws_xpixel = w;
+            ws.ws_ypixel = h;
+            ioctl(m_tab->masterFd, TIOCSWINSZ, &ws);
+        }
     }
 }
 
 void TerminalWidget::paintGL() {
-    if (!m_tab || !m_tab->model) {
-        glClearColor(1.00f, 0.05f, 0.05f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        return;
-    }
     auto visible = m_tab->model->getVisibleScreen();
 
-    const size_t cellCount = static_cast<size_t>(m_tab->model->width()) * m_tab->model->height();
+    const size_t cellCount = static_cast<size_t>(m_cols) * m_rows;
     screenCodepoints.resize(cellCount);
     screenFg.resize(cellCount * 4);
     screenBg.resize(cellCount * 4);
@@ -380,7 +362,7 @@ void TerminalWidget::paintGL() {
     GLint selStartLoc = program.uniformLocation("SelStart");
     GLint selEndLoc = program.uniformLocation("SelEnd");
     if (cursorPosLoc >= 0) glUniform2i(cursorPosLoc, m_tab->model->cursor_x(), m_tab->model->cursor_y() - m_tab->model->scroll_y());
-    if (cellSizeLoc >= 0) glUniform2i(cellSizeLoc, m_tab->model->char_width(), m_tab->model->char_height());
+    if (cellSizeLoc >= 0) glUniform2i(cellSizeLoc, m_charWidth, m_charHeight);
     if (selStartLoc >= 0) glUniform2i(selStartLoc, m_selStart.x(), m_selStart.y() - m_tab->model->scroll_y());
     if (selEndLoc >= 0) glUniform2i(selEndLoc, m_selEnd.x(), m_selEnd.y() - m_tab->model->scroll_y());
 
@@ -388,31 +370,27 @@ void TerminalWidget::paintGL() {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_tab->model->width(), m_tab->model->height(),
+        m_cols, m_rows,
         GL_RED_INTEGER, GL_UNSIGNED_INT,
         screenCodepoints.data() );
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, attrFgTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_tab->model->width(), m_tab->model->height(),
+        m_cols, m_rows,
         GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, screenFg.data() );
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, attrBgTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_tab->model->width(), m_tab->model->height(),
+        m_cols, m_rows,
         GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, screenBg.data() );
 
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, m_glyphCache.texture());
     glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D, m_glyphUVTexture);
     glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
-        m_tab->model->width(), m_tab->model->height(),
+        m_cols, m_rows,
         GL_RGBA, GL_FLOAT, m_glyphUVs.data() );
-
-    glBindVertexArray(vao);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
 
     // Draw
     glBindVertexArray(vao);
@@ -424,8 +402,8 @@ void TerminalWidget::paintGL() {
 
 QPoint TerminalWidget::getCellPos(QPointF position) {
     QPoint p;
-    p.setX((int)(position.x() / m_tab->model->char_width()));
-    p.setY((int)(position.y() / m_tab->model->char_height()));
+    p.setX((int)(position.x() / m_charWidth));
+    p.setY((int)(position.y() / m_charHeight));
     return p;
 }
 
@@ -513,7 +491,7 @@ void TerminalWidget::copySelection() {
     auto visible = m_tab->model->getVisibleScreen();
     QString text;
 
-    int width = m_tab->model->width();
+    int width = m_cols;
     int sel_end = m_tab->model->charOffset(m_selEnd.x(), m_selEnd.y());
     int sel_start = m_tab->model->charOffset(m_selStart.x(), m_selStart.y());
 
@@ -546,6 +524,7 @@ void TerminalWidget::onPtyReadable() {
     ssize_t n = ::read(m_tab->masterFd, buf, sizeof(buf));
     if (n <= 0) {
         m_tab->notifier->setEnabled(false);
+        emit tabClosed();
         return;
     }
     QString text = m_tab->decoder.decode(QByteArray(buf, static_cast<int>(n)));

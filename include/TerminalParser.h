@@ -25,8 +25,7 @@ private:
     void handleCSI(QChar finalChar);
     std::vector<int> parseParams(QStringView s) const;
     static bool isFinalByte(QChar ch);
-
-private:
+    
     TerminalModel& m_model;
     State m_state = State::Ground;
     QString m_paramBuffer;

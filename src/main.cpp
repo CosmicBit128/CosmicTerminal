@@ -8,6 +8,7 @@ int main(int argc, char *argv[]) {
     int char_width = 9;
     int char_height = 18;
     int buf_height = 8192;
+    int tab_bar_height = 32;
     
     int window_width = width * char_width;
     int window_height = height * char_height;
@@ -16,7 +17,7 @@ int main(int argc, char *argv[]) {
 
     TerminalWindow window;
     window.setWindowTitle("Cosmic Terminal");
-    window.resize(window_width, window_height);
+    window.resize(window_width, window_height + tab_bar_height);
     window.show();
 
     // QTimer::singleShot(0, &window, [&window]{ window.createTab(); });

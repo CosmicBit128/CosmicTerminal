@@ -39,6 +39,11 @@ GlyphRect GlyphCache::get(uint32_t cp, GlyphStyle style) {
 }
 
 GlyphRect GlyphCache::upload(uint32_t cp, GlyphStyle style) {
+    if (!m_tex) {
+        qDebug() << "upload called before init!";
+        return {0,0,0,0,false};
+    }
+
     FT_Face face = faceFor(style);
 
     bool italic = (style == GlyphStyle::Italic || style == GlyphStyle::BoldItalic);
@@ -55,18 +60,21 @@ GlyphRect GlyphCache::upload(uint32_t cp, GlyphStyle style) {
     FT_GlyphSlot g = face->glyph;
     int bw = (int)g->bitmap.width;
     int bh = (int)g->bitmap.rows;
-
-    int slotW = isWide(cp) ? m_cellW * 2 : m_cellW;
+    
+    bool wide = (g->bitmap_left + bw) > m_cellW;
+    int slotW = wide ? m_cellW * 2 : m_cellW;
     int slotH = m_cellH;
-
+    
     // advance to next row if needed
     if (m_cursorX + slotW > m_atlasW) {
         m_cursorX  = 0;
         m_cursorY += m_rowH;
         m_rowH     = 0;
     }
-    if (m_cursorY + slotH > m_atlasH)
+
+    if (m_cursorY + slotH > m_atlasH) {
         return {0,0,0,0,false};
+    }
 
     m_rowH = std::max(m_rowH, slotH);
 
@@ -80,7 +88,7 @@ GlyphRect GlyphCache::upload(uint32_t cp, GlyphStyle style) {
         if (ay < m_cursorY || ay >= m_cursorY + slotH) continue;
         if (ay < 0 || ay >= m_atlasH) continue;
 
-        int x0 = std::max(0, -g->bitmap_left - 1);
+        int x0 = std::max(0, -ox);
         int x1 = std::min(bw, m_atlasW - ox);
 
         if (x0 >= x1) continue;

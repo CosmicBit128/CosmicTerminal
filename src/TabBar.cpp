@@ -4,6 +4,8 @@
 
 
 TabBar::TabBar(QWidget* parent) : QWidget(parent) {
+    setFocusPolicy(Qt::NoFocus);
+
     m_layout = new QHBoxLayout(this);
     m_layout->setSpacing(2);
     m_layout->setContentsMargins(4,2,4,2);
@@ -11,6 +13,7 @@ TabBar::TabBar(QWidget* parent) : QWidget(parent) {
 
     m_newTabBtn = new QPushButton("+", this);
     m_newTabBtn->setFixedSize(24, 24);
+    m_newTabBtn->setFocusPolicy(Qt::NoFocus);
     connect(m_newTabBtn, &QPushButton::clicked, this, &TabBar::newTabRequested);
     m_layout->addWidget(m_newTabBtn);
 }
@@ -29,6 +32,9 @@ void TabBar::addTab(const QString& title, int index) {
     close->setFixedSize(16,16);
     close->setFlat(true);
     connect(close, &QPushButton::clicked, this, [this, index]{ emit tabClosed(index); });
+
+    label->setFocusPolicy(Qt::NoFocus);
+    close->setFocusPolicy(Qt::NoFocus);
 
     row->addWidget(label);
     row->addWidget(close);

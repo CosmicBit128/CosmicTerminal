@@ -16,6 +16,7 @@ TerminalWindow::TerminalWindow() {
 
     connect(m_tabBar, &TabBar::tabClicked, this, &TerminalWindow::switchToTab);
     connect(m_tabBar, &TabBar::tabClosed, this, &TerminalWindow::closeTab);
+    connect(m_termWidget, &TerminalWidget::tabClosed, this, [this]{closeTab(m_activeTab);});
     connect(m_tabBar, &TabBar::newTabRequested, this, [this]{ createTab(); });
     connect(m_termWidget, &TerminalWidget::requestNewTab, this, [this]{ createTab(); });
 
@@ -55,6 +56,7 @@ void TerminalWindow::switchToTab(int index) {
     m_activeTab = index;
     m_termWidget->setTab(m_tabs[index]);
     m_tabBar->setActiveTab(index);
+    m_termWidget->setFocus();
 }
 
 void TerminalWindow::closeTab(int index) {
