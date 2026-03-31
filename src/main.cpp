@@ -1,5 +1,4 @@
 #include <QApplication>
-#include <QTimer>
 #include "TerminalWindow.h"
 
 int main(int argc, char *argv[]) {
@@ -19,8 +18,6 @@ int main(int argc, char *argv[]) {
     window.setWindowTitle("Cosmic Terminal");
     window.resize(window_width, window_height + tab_bar_height);
     window.show();
-
-    // QTimer::singleShot(0, &window, [&window]{ window.createTab(); });
 
     return app.exec();
 }

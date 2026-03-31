@@ -61,8 +61,7 @@ GlyphRect GlyphCache::upload(uint32_t cp, GlyphStyle style) {
     int bw = (int)g->bitmap.width;
     int bh = (int)g->bitmap.rows;
     
-    bool wide = (g->bitmap_left + bw) > m_cellW;
-    int slotW = wide ? m_cellW * 2 : m_cellW;
+    int slotW = isWide(cp) ? m_cellW * 2 : m_cellW;
     int slotH = m_cellH;
     
     // advance to next row if needed
@@ -88,7 +87,7 @@ GlyphRect GlyphCache::upload(uint32_t cp, GlyphStyle style) {
         if (ay < m_cursorY || ay >= m_cursorY + slotH) continue;
         if (ay < 0 || ay >= m_atlasH) continue;
 
-        int x0 = std::max(0, -ox);
+        int x0 = std::max(0, -g->bitmap_left - 1);
         int x1 = std::min(bw, m_atlasW - ox);
 
         if (x0 >= x1) continue;
@@ -113,10 +112,12 @@ GlyphRect GlyphCache::upload(uint32_t cp, GlyphStyle style) {
 }
 
 bool GlyphCache::isWide(uint32_t cp) {
+    if (!m_regular) return false;
     if (FT_Load_Char(m_regular, cp, FT_LOAD_RENDER))
         return false;
     FT_GlyphSlot g = m_regular->glyph;
     int left = g->bitmap_left;
     int width = (int)g->bitmap.width;
-    return (left + width) > m_cellW;
+    bool is_wide = (left + width) > m_cellW;
+    return is_wide;
 }

@@ -42,6 +42,10 @@ TerminalTab* TerminalWindow::createTab() {
         _exit(1);
     }
 
+    tab->model->glyphIsWide = [this](uint32_t cp) {
+        return m_termWidget->glyphCache().isWide(cp);
+    };
+
     tab->notifier = new QSocketNotifier(tab->masterFd, QSocketNotifier::Read);
 
     int index = (int)m_tabs.size();
@@ -60,9 +64,16 @@ void TerminalWindow::switchToTab(int index) {
 }
 
 void TerminalWindow::closeTab(int index) {
+    if (index < 0 || index >= (int)m_tabs.size()) return;
     if (m_tabs.size() == 1) { qApp->quit(); return; }
+
+    m_termWidget->setTab(nullptr);
+    m_activeTab = -1;
+
     delete m_tabs[index];
     m_tabs.erase(m_tabs.begin() + index);
     m_tabBar->removeTab(index);
-    switchToTab(std::min(index, (int)m_tabs.size() - 1));
+
+    int newIndex = std::min(index, (int)m_tabs.size() - 1);
+    switchToTab(newIndex);
 }

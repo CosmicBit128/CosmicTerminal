@@ -60,6 +60,7 @@ public:
     int rows() const { return m_rows; }
     int charWidth() const { return m_charWidth; }
     int charHeight() const { return m_charHeight; }
+    GlyphCache& glyphCache() { return m_glyphCache; }
 
 signals:
     void tabClosed();
