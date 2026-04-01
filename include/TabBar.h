@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QTabBar>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <vector>
@@ -11,15 +12,15 @@ public:
     explicit TabBar(QWidget* parent = nullptr);
     void addTab(const QString& title, int index);
     void removeTab(int index);
-    void setActiveTab(int index);
+
+    QTabBar* bar() const { return m_bar; }
+    QPushButton* newTabBtn() const { return m_newTabBtn; }
 
 signals:
-    void tabClicked(int index);
-    void tabClosed(int index);
     void newTabRequested();
 
 private:
+    QTabBar* m_bar = nullptr;
     QHBoxLayout* m_layout = nullptr;
     QPushButton* m_newTabBtn = nullptr;
-    std::vector<QWidget*> m_tabs;
 };

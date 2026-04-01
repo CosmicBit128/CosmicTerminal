@@ -61,6 +61,9 @@ public:
     int charWidth() const { return m_charWidth; }
     int charHeight() const { return m_charHeight; }
     GlyphCache& glyphCache() { return m_glyphCache; }
+    
+    void copySelection();
+    void paste();
 
 signals:
     void tabClosed();
@@ -86,9 +89,6 @@ private slots:
     void onPtyReadable();
 
 private:
-    void copySelection();
-    void paste();
-
     TerminalTab* m_tab = nullptr;
 
     int m_charWidth  = 9;

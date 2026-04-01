@@ -296,6 +296,8 @@ void TerminalWidget::resizeGL(int w, int h) {
 }
 
 void TerminalWidget::paintGL() {
+    if (!m_tab) return;
+    
     auto visible = m_tab->model->getVisibleScreen();
 
     const size_t cellCount = static_cast<size_t>(m_cols) * m_rows;

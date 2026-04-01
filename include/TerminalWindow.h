@@ -2,9 +2,11 @@
 
 #include "TerminalTab.h"
 #include "TerminalWidget.h"
+#include "SettingsDialog.h"
 #include "TabBar.h"
 
 #include <QWidget>
+#include <QMenuBar>
 #include <QVBoxLayout>
 #include <vector>
 
@@ -16,10 +18,13 @@ public:
     TerminalTab* createTab();
     void switchToTab(int index);
     void closeTab(int index);
+    void newWindow();
+    void openPreferences();
 
 private:
     std::vector<TerminalTab*> m_tabs;
-    int m_activeTab = -1;
     TerminalWidget* m_termWidget = nullptr;
     TabBar* m_tabBar = nullptr;
+    SettingsDialog* m_dlg = nullptr;
+    QMenuBar* m_menu = nullptr;
 };
