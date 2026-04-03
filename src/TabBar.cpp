@@ -12,7 +12,7 @@ TabBar::TabBar(QWidget* parent) : QWidget(parent) {
 
     m_layout = new QHBoxLayout(this);
     m_layout->setSpacing(2);
-    m_layout->setContentsMargins(4,0,2,2);
+    m_layout->setContentsMargins(0,0,0,0);
 
     m_newTabBtn = new QPushButton("+", this);
     m_newTabBtn->setFixedSize(32, 32);
@@ -23,10 +23,15 @@ TabBar::TabBar(QWidget* parent) : QWidget(parent) {
 }
 
 void TabBar::addTab(const QString& title, int index) {
-    m_bar->addTab(title);
+    m_bar->insertTab(index, title);
 }
 
 void TabBar::removeTab(int index) {
     if (index < 0 || index >= m_bar->count()) return;
     m_bar->removeTab(index);
+}
+
+void TabBar::setNewTabButtonVisible(bool visible) {
+    if (visible) m_newTabBtn->show();
+    else m_newTabBtn->hide();
 }

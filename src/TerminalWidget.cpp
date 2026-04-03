@@ -1,5 +1,6 @@
 #include "TerminalWidget.h"
 #include "TerminalModel.h"
+#include "Settings.h"
 
 #include <QSocketNotifier>
 #include <QByteArray>
@@ -107,12 +108,19 @@ TerminalWidget::TerminalWidget(QWidget* parent)
 {
     setFocusPolicy(Qt::StrongFocus);
 
+    setAttribute(Qt::WA_TranslucentBackground);
+    setAutoFillBackground(false);
+
     cursorTimer = new QTimer(this);
     connect(cursorTimer, &QTimer::timeout, this, [this]() {
         cursorVisible = !cursorVisible;
         update();
     });
     cursorTimer->start(500);
+
+    auto& s = Settings::data();
+    m_cols = s.terminalWidth;
+    m_rows = s.terminalHeight;
 }
 
 TerminalWidget::~TerminalWidget() {
@@ -150,6 +158,7 @@ out vec4 fragColor;
 uniform usampler2D TextBuffer;
 uniform usampler2D AttrFGBuffer;
 uniform usampler2D AttrBGBuffer;
+uniform float BackgroundOpacity;
 
 uniform sampler2D GlyphAtlas;
 uniform sampler2D GlyphUVs;
@@ -157,10 +166,13 @@ uniform sampler2D GlyphUVs;
 uniform ivec2 CellSize;
 uniform ivec2 CursorPos;
 uniform bool CursorVisible;
+uniform vec3 CursorColor;
+uniform int CursorStyle;
 
 uniform ivec2 SelStart;
 uniform ivec2 SelEnd;
 uniform bool HasSelection;
+uniform vec3 SelColor;
 
 
 bool inSelection(ivec2 cell, ivec2 screen_size) {
@@ -180,32 +192,55 @@ void main() {
     vec2 grid_uv = uv * vec2(screenSize);
     ivec2 cell = ivec2(grid_uv);
     vec2 cell_uv = fract(grid_uv);
-    vec4 uvRect = texelFetch(GlyphUVs, cell, 0);
 
+    
     uvec4 fgPack = texelFetch(AttrFGBuffer, cell, 0);
     uvec4 bgPack = texelFetch(AttrBGBuffer, cell, 0);
-
+    
     uint flags = fgPack.a | (bgPack.a << 8u);
-
+    
     vec4 fg = vec4(fgPack.rgb, 255.0) / 255.0;
     vec4 bg = vec4(bgPack.rgb, 255.0) / 255.0;
-
+    
     if ((flags & 16u) != 0u) {
         vec4 t = fg; fg = bg; bg = t;
     }
-
+        
+    // Normal char
     vec2 sample_uv = cell_uv;
-    if ((flags & 128u) != 0u) sample_uv.x = cell_uv.x * 0.5;
-    if ((flags & 256u) != 0u) sample_uv.x = cell_uv.x * 0.5 + 0.5;
+    vec4 uvRect = texelFetch(GlyphUVs, cell, 0);
+    bool is_wide = (uvRect.z-uvRect.x)*150.0>0.5;
+    if (is_wide) sample_uv.x = cell_uv.x * 0.5;
 
     vec2 atlasCoord = mix(uvRect.xy, uvRect.zw, sample_uv);
     float alpha = texture(GlyphAtlas, atlasCoord).r;
 
-    vec4 color = mix(bg, fg, alpha);
-    if (cell == CursorPos && CursorVisible) color.rgb = vec3(1.0) - color.rgb;
-    if (inSelection(cell, screenSize)) color.rgb += vec3(0.07,0.1,0.2);
+    // Neighbor char
+    if (cell.x > 0) {
+        vec2 n_sample_uv = cell_uv;
+        vec4 n_uvRect = texelFetch(GlyphUVs, cell-ivec2(1,0), 0);
+        bool n_is_wide = (n_uvRect.z-n_uvRect.x)*150.0>0.5;
+        if (n_is_wide) {
+            n_sample_uv.x = cell_uv.x * 0.5 + 0.5;
+            vec2 n_atlasCoord = mix(n_uvRect.xy, n_uvRect.zw, n_sample_uv);
+            alpha += texture(GlyphAtlas, n_atlasCoord).r;
+        }
+    }
+    alpha = clamp(alpha, 0.0, 1.0);
 
-    fragColor = color;
+    bg.a = BackgroundOpacity;
+    vec4 color;
+    if (cell == CursorPos && CursorVisible) {
+        ivec2 local_pos = ivec2(cell_uv * CellSize);
+        vec4 cursor_color = mix(vec4(CursorColor, BackgroundOpacity), vec4(bg.rgb, 1.0), alpha);
+        vec4 normal_color = mix(bg, fg, alpha);
+        if (CursorStyle == 0) color = cursor_color;
+        else if (CursorStyle == 1) color = local_pos.x==0 ? cursor_color : normal_color;
+        else if (CursorStyle == 2) color = local_pos.y==CellSize.y-1 ? cursor_color : normal_color;
+    } else { color = mix(bg, fg, alpha); }
+    if (inSelection(cell, screenSize)) color.rgb += SelColor * 0.2;
+
+    fragColor = vec4(color.rgba);
 }
     )");
 
@@ -348,42 +383,44 @@ void TerminalWidget::paintGL() {
         else if (c.flags & CellItalic) style = GlyphStyle::Italic;
 
         GlyphRect r{0, 0, 0, 0, false};
-        if ((c.flags & CellWidePad)) continue;
         if (c.codepoint != 0)
             r = m_glyphCache.get(c.codepoint, style);
         m_glyphUVs[i*4+0] = r.u0;
         m_glyphUVs[i*4+1] = r.v0;
         m_glyphUVs[i*4+2] = r.u1;
         m_glyphUVs[i*4+3] = r.v1;
-
-        if ((c.flags & CellWide) && i + 1 < cellCount) {
-            m_glyphUVs[(i+1)*4+0] = r.u0;
-            m_glyphUVs[(i+1)*4+1] = r.v0;
-            m_glyphUVs[(i+1)*4+2] = r.u1;
-            m_glyphUVs[(i+1)*4+3] = r.v1;
-        }
     }
+    auto& s = Settings::data();
 
-    glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+    float alpha = s.backgroundOpacity / 100.0f;
+    QColor bg = s.backgroundColor;
+    glClearColor(bg.redF() * alpha, bg.greenF() * alpha, bg.blueF() * alpha, alpha);
     glClear(GL_COLOR_BUFFER_BIT);
 
     program.bind();
+
 
     program.setUniformValue("TextBuffer", 0);
     program.setUniformValue("AttrFGBuffer", 1);
     program.setUniformValue("AttrBGBuffer", 2);
     program.setUniformValue("GlyphAtlas", 3);
     program.setUniformValue("GlyphUVs", 4);
+    program.setUniformValue("BackgroundOpacity", s.backgroundOpacity / 100.0f);
+    program.setUniformValue("CursorStyle", s.cursorStyle);
     program.setUniformValue("CursorVisible", cursorVisible && m_tab->model->cursorVisible() && m_tab->model->cursorBlinkEnabled());
     program.setUniformValue("HasSelection", m_hasSelection);
     GLint cursorPosLoc = program.uniformLocation("CursorPos");
     GLint cellSizeLoc = program.uniformLocation("CellSize");
     GLint selStartLoc = program.uniformLocation("SelStart");
     GLint selEndLoc = program.uniformLocation("SelEnd");
+    GLint selColorLoc = program.uniformLocation("SelColor");
+    GLint cursorColorLoc = program.uniformLocation("CursorColor");
     if (cursorPosLoc >= 0) glUniform2i(cursorPosLoc, m_tab->model->cursor_x(), m_tab->model->cursor_y() - m_tab->model->scroll_y());
     if (cellSizeLoc >= 0) glUniform2i(cellSizeLoc, m_charWidth, m_charHeight);
     if (selStartLoc >= 0) glUniform2i(selStartLoc, m_selStart.x(), m_selStart.y() - m_tab->model->scroll_y());
     if (selEndLoc >= 0) glUniform2i(selEndLoc, m_selEnd.x(), m_selEnd.y() - m_tab->model->scroll_y());
+    if (selColorLoc >= 0) glUniform3f(selColorLoc, s.selectionColor.redF(), s.selectionColor.greenF(), s.selectionColor.blueF());
+    if (cursorColorLoc >= 0) glUniform3f(cursorColorLoc, s.cursorColor.redF(), s.cursorColor.greenF(), s.cursorColor.blueF());
 
 
     glActiveTexture(GL_TEXTURE0);

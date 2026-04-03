@@ -5,12 +5,9 @@
 #include <cstddef>
 #include <iostream>
 #include <algorithm>
-#include <functional>
 
 
-static const uint8_t kAnsi256[256][3] = {
-    {32,32,32}, {128,0,0}, {0,128,0}, {128,128,0}, {0,0,128}, {128,0,128}, {0,128,128}, {192,192,192},
-    {128,128,128}, {255,0,0}, {0,255,0}, {255,255,0}, {0,0,255}, {255,0,255}, {0,255,255}, {255,255,255},
+static const uint8_t kAnsi256[240][3] = {
     {0,0,0}, {0,0,95}, {0,0,135}, {0,0,175}, {0,0,215}, {0,0,255}, {0,95,0}, {0,95,95},
     {0,95,135}, {0,95,175}, {0,95,215}, {0,95,255}, {0,135,0}, {0,135,95}, {0,135,135}, {0,135,175},
     {0,135,215}, {0,135,255}, {0,175,0}, {0,175,95}, {0,175,135}, {0,175,175}, {0,175,215}, {0,175,255},
@@ -65,8 +62,7 @@ enum CellFlags : uint16_t {
     CellReverse   = 1 << 4,
     CellHidden    = 1 << 5,
     CellStrike    = 1 << 6,
-    CellWide      = 1 << 7,
-    CellWidePad   = 1 << 8
+    CellWide      = 1 << 7
 };
 
 struct TerminalCell {
@@ -131,7 +127,6 @@ public:
     
     ColorSpec resolveColor(const ColorSpec& c, bool isFg);
     std::vector<TerminalCell> getVisibleScreen() const;
-    std::function<bool(uint32_t)> glyphIsWide;
 
 private:
     size_t physicalRow(int logicalRow) const;

@@ -12,6 +12,7 @@ public:
     explicit TabBar(QWidget* parent = nullptr);
     void addTab(const QString& title, int index);
     void removeTab(int index);
+    void setNewTabButtonVisible(bool visible);
 
     QTabBar* bar() const { return m_bar; }
     QPushButton* newTabBtn() const { return m_newTabBtn; }

@@ -46,7 +46,7 @@ static std::string find_font(const std::vector<std::string> fonts, int weight) {
     return "";
 }
 
-class TerminalModel;
+// I have no idea why this was here im dumb i guess :3
 
 class TerminalWidget : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core {
     Q_OBJECT

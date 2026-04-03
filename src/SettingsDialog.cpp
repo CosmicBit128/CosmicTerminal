@@ -1,4 +1,5 @@
 #include "SettingsDialog.h"
+#include "Settings.h"
 
 #include <QSettings>
 #include <QTabWidget>
@@ -17,6 +18,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) {
     tabs->addTab(createTabsTab(), "Tabs");
     // tabs->addTab(createApperanceTab(), "Keybindings");
 
+    Settings::load();
     load();
     update();
 
@@ -145,62 +147,43 @@ void SettingsDialog::update() {
 }
 
 void SettingsDialog::load() {
-    QSettings s;
+    auto& d = Settings::data();
 
-    QString color_codes[2][16] = {
-        { // GNOME Terminal: Tango Theme
-            "#2E3436", "#CC0000", "#4E9A06", "#C4A000", "#3465A4", "#75507B", "#06989A", "#D3D7CF",
-            "#555753", "#EF2929", "#8AE234", "#FCE94F", "#729FCF", "#AD7FA8", "#34E2E2", "#EEEEEC"
-        },
-        { // Kitty Default
-            "#32363D", "#E06B74", "#98C379", "#E5C07A", "#62AEEF", "#C778DD", "#55B6C2", "#ABB2BF",
-            "#50545B", "#EA757E", "#A2CD83", "#EFCA84", "#6CB8F9", "#D282E7", "#5FC0CC", "#B5BCC9"
-        }
-    };
-
-    m_terminalWidth->setValue(s.value("TerminalWidth", 128).toInt());
-    m_terminalHeight->setValue(s.value("TerminalHeight", 32).toInt());
-    m_terminalBufferHeight->setValue(s.value("TerminalBufferHeight", 4096).toInt());
-    m_enableBell->setChecked(s.value("EnableBell", true).toBool());
-    s.beginReadArray("Appearance/Colors");
-    for (int i = 0; i < 16; ++i) {
-        s.setArrayIndex(i);
-        m_colors[i] = s.value("Color", QColor(color_codes[1][i])).value<QColor>();
-    }
-    s.endArray();
-    m_backgroundColor = s.value("Appearance/BackgroundColor", "#000000").value<QColor>();
-    m_cursorColor = s.value("Appearance/CursorColor", "#ffffff").value<QColor>();
-    m_selectionColor = s.value("Appearance/SelectionColor", "#5980ff").value<QColor>();
-    m_backgroundOpacity->setValue(s.value("Appearance/BackgroundOpacity", 80).toInt());
-    m_cursorStyle->setCurrentIndex(s.value("Appearance/CursorStyle", 0).toInt());
-    m_showTabBar->setChecked(s.value("Tabs/ShowTabBar", true).toBool());
-    m_showTabCloseButton->setChecked(s.value("Tabs/ShowTabCloseButton", true).toBool());
-    m_showNewTabButton->setChecked(s.value("Tabs/ShowNewTabButton", true).toBool());
-    m_addNewTabs->setCurrentIndex(s.value("Tabs/AddNewTabs", 0).toInt());
-    m_tabsAlignment->setCurrentIndex(s.value("Tabs/TabsAlignment", 0).toInt());
+    m_terminalWidth->setValue(d.terminalWidth);
+    m_terminalHeight->setValue(d.terminalHeight);
+    m_terminalBufferHeight->setValue(d.terminalBufferHeight);
+    m_enableBell->setChecked(d.enableBell);
+    for (int i = 0; i < 16; ++i) m_colors[i] = d.colors[i];
+    m_backgroundColor = d.backgroundColor;
+    m_cursorColor = d.cursorColor;
+    m_selectionColor = d.selectionColor;
+    m_backgroundOpacity->setValue(d.backgroundOpacity);
+    m_cursorStyle->setCurrentIndex(d.cursorStyle);
+    m_showTabBar->setChecked(d.showTabBar);
+    m_showTabCloseButton->setChecked(d.showTabCloseButton);
+    m_showNewTabButton->setChecked(d.showNewTabButton);
+    m_addNewTabs->setCurrentIndex(d.addNewTabs);
+    m_tabsAlignment->setCurrentIndex(d.tabsAlignment);
 }
 
 void SettingsDialog::save() {
-    QSettings s;
+    auto& d = Settings::data();
 
-    s.setValue("TerminalWidth", m_terminalWidth->value());
-    s.setValue("TerminalHeight", m_terminalHeight->value());
-    s.setValue("TerminalBufferHeight", m_terminalBufferHeight->value());
-    s.setValue("EnableBell", m_enableBell->isChecked());
-    s.beginWriteArray("Appearance/Colors");
-    for (int i = 0; i < 16; ++i) {
-        s.setArrayIndex(i);
-        s.setValue("Color", m_colors[i]);
-    }
-    s.endArray();
-    s.setValue("Appearance/BackgroundColor", m_backgroundColor);
-    s.setValue("Appearance/CursorColor", m_cursorColor);
-    s.setValue("Appearance/SelectionColor", m_selectionColor);
-    s.setValue("Appearance/BackgroundOpacity", m_backgroundOpacity->value());
-    s.setValue("Appearance/CursorStyle", m_cursorStyle->currentData().toInt());
-    s.setValue("Tabs/ShowTabBar", m_showTabBar->isChecked());
-    s.setValue("Tabs/ShowTabCloseButton", m_showTabCloseButton->isChecked());
-    s.setValue("Tabs/ShowNewTabButton", m_showNewTabButton->isChecked());
-    s.setValue("Tabs/AddNewTabs", m_addNewTabs->currentData().toInt());
-    s.setValue("Tabs/TabsAlignment", m_tabsAlignment->currentData().toInt());
+    d.terminalWidth = m_terminalWidth->value();
+    d.terminalHeight = m_terminalHeight->value();
+    d.terminalBufferHeight = m_terminalBufferHeight->value();
+    d.enableBell = m_enableBell->isChecked();
+    for (int i = 0; i < 16; ++i) d.colors[i] = m_colors[i];
+    d.backgroundColor = m_backgroundColor;
+    d.cursorColor = m_cursorColor;
+    d.selectionColor = m_selectionColor;
+    d.backgroundOpacity = m_backgroundOpacity->value();
+    d.cursorStyle = m_cursorStyle->currentData().toInt();
+    d.showTabBar = m_showTabBar->isChecked();
+    d.showTabCloseButton = m_showTabCloseButton->isChecked();
+    d.showNewTabButton = m_showNewTabButton->isChecked();
+    d.addNewTabs = m_addNewTabs->currentData().toInt();
+    d.tabsAlignment = m_tabsAlignment->currentData().toInt();
+
+    Settings::save();
 }

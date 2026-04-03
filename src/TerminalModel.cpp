@@ -1,4 +1,7 @@
 #include "TerminalModel.h"
+#include "Settings.h"
+
+#include <QApplication>
 #include <cstring>
 
 
@@ -33,17 +36,31 @@ TerminalModel::TerminalModel(int w, int h, int buf_h, int cw, int ch)
     m_cursor_x = 0;
     m_cursor_y = 0;
 
+    auto& s = Settings::data();
     m_default_fg = rgbColor(220, 220, 220);
-    m_default_bg = rgbColor(0, 0, 0);
+    m_default_bg = rgbColor(s.backgroundColor.red(), s.backgroundColor.green(), s.backgroundColor.blue());
     m_current_fg = m_default_fg;
     m_current_bg = m_default_bg;
 }
 
 void TerminalModel::resize(int new_width, int new_height) {
+    std::vector<TerminalCell> new_buffer(new_width * m_buf_height);
+
+    int rows_to_copy = std::min(m_height, new_height);
+    int cols_to_copy = std::min(m_width, new_width);
+
+    for (int row = 0; row < rows_to_copy; ++row) {
+        size_t src = physicalRow(row) * m_width;
+        size_t dst = row * new_width; // new buffer uses simple layout
+        for (int col = 0; col < cols_to_copy; ++col)
+            new_buffer[dst + col] = (*m_active_buffer)[src + col];
+    }
+
+    *m_active_buffer = std::move(new_buffer);
+    m_cursor_x = std::min(m_cursor_x, new_width - 1);
+    m_cursor_y = std::min(m_cursor_y, new_height - 1);
     m_width = new_width;
     m_height = new_height;
-
-    (*m_active_buffer).assign(static_cast<size_t>(m_width) * m_buf_height, TerminalCell{});
 }
 
 size_t TerminalModel::physicalRow(int logicalRow) const {
@@ -76,26 +93,13 @@ void TerminalModel::putWrappedCodepoint(uint32_t cp) {
         ++m_cursor_y;
     }
 
-    bool wide = glyphIsWide && glyphIsWide(cp);
-
     TerminalCell& cell = cellAt(m_cursor_x, m_cursor_y);
     cell.codepoint = cp;
     cell.fg = m_current_fg;
     cell.bg = m_current_bg;
     cell.flags = m_current_flags;
-    if (wide) cell.flags |= CellWide;
 
     ++m_cursor_x;
-
-    if (wide && m_cursor_x < m_width) {
-        TerminalCell& pad = cellAt(m_cursor_x, m_cursor_y);
-        pad = TerminalCell{};
-        pad.codepoint = 32;
-        pad.fg = m_current_fg;
-        pad.bg = m_current_bg;
-        pad.flags = CellWidePad;
-        ++m_cursor_x;
-    }
 }
 
 void TerminalModel::putCodepoint(uint32_t codepoint) {
@@ -135,7 +139,7 @@ void TerminalModel::tab() {
 }
 
 void TerminalModel::bell() {
-    // TODO: audible bell
+    QApplication::beep();
 }
 
 void TerminalModel::cursorUp(int n) {
@@ -202,7 +206,6 @@ void TerminalModel::clearScreen(int mode) {
 }
 
 void TerminalModel::scrollRegionUp(int n) {
-    m_scroll_offset += n;
     int top = m_scroll_top;
     int bot = scrollBottom();
     n = std::clamp(n, 1, bot - top + 1);
@@ -221,7 +224,6 @@ void TerminalModel::scrollRegionUp(int n) {
 }
 
 void TerminalModel::scrollRegionDown(int n) {
-    m_scroll_offset -= n;
     int top = m_scroll_top;
     int bot = scrollBottom();
     n = std::clamp(n, 1, bot - top + 1);
@@ -316,9 +318,17 @@ ColorSpec TerminalModel::resolveColor(const ColorSpec& c, bool isFg) {
     if (c.type == ColorType::Indexed) {
         ColorSpec out;
         out.type = ColorType::RGB;
-        out.r = kAnsi256[c.index][0];
-        out.g = kAnsi256[c.index][1];
-        out.b = kAnsi256[c.index][2];
+        auto& s = Settings::data();
+        if (c.index < 16) {
+            QColor color = s.colors[c.index];
+            out.r = color.red();
+            out.g = color.green();
+            out.b = color.blue();
+        } else {
+            out.r = kAnsi256[c.index-16][0];
+            out.g = kAnsi256[c.index-16][1];
+            out.b = kAnsi256[c.index-16][2];
+        }
         return out;
     }
     return isFg ? m_default_fg : m_default_bg;

@@ -20,7 +20,6 @@ public:
     void closeTab(int index);
     void newWindow();
     void openPreferences();
-    void resizeWidget(int width, int height);
     QSize sizeHint() const;
 
 private:
