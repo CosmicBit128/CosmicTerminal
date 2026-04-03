@@ -5,16 +5,19 @@
 
 
 TerminalWindow::TerminalWindow() {
-    auto* layout = new QVBoxLayout(this);
+    auto* container = new QWidget(this);
+    auto* layout = new QVBoxLayout(container);
     layout->setSpacing(0);
     layout->setContentsMargins(0,0,0,0);
 
-    m_tabBar = new TabBar(this);
-    m_termWidget = new TerminalWidget(this);
+    m_tabBar = new TabBar(container);
+    m_termWidget = new TerminalWidget(container);
 
     m_tabBar->setFixedHeight(32);
     layout->addWidget(m_tabBar, 0);
     layout->addWidget(m_termWidget, 1);
+
+    setCentralWidget(container);
 
     connect(m_tabBar->bar(), &QTabBar::currentChanged, this, [this](int index){ switchToTab(index); });
     connect(m_tabBar->bar(), &QTabBar::tabCloseRequested, this, [this](int index){ closeTab(index); });
@@ -23,6 +26,7 @@ TerminalWindow::TerminalWindow() {
     connect(m_termWidget, &TerminalWidget::requestNewTab, this, [this]{ createTab(); });
 
     m_dlg = new SettingsDialog(this);
+    m_dlg->setWindowTitle("Preferences");
 
     // --- Menu Bar ---
     m_menu = new QMenuBar(this);
@@ -44,8 +48,7 @@ TerminalWindow::TerminalWindow() {
     connect(a_paste, &QAction::triggered, this, [this]{ m_termWidget->paste(); });
     connect(a_pref, &QAction::triggered, this, &TerminalWindow::openPreferences);
 
-    auto *menu_layout = new QVBoxLayout(this);
-    menu_layout->setMenuBar(m_menu);
+    setMenuBar(m_menu);
 
     createTab();
 }
@@ -110,4 +113,16 @@ void TerminalWindow::openPreferences() {
     if (m_dlg->exec() == QDialog::Accepted) {
         m_dlg->save();
     }
+}
+
+void TerminalWindow::resizeWidget(int width, int height) {
+    m_termWidget->resize(width, height);
+}
+
+QSize TerminalWindow::sizeHint() const {
+    int tabH = m_tabBar ? m_tabBar->sizeHint().height() : 0;
+    return QSize(
+        m_termWidget->cols() * m_termWidget->charWidth(),
+        m_termWidget->rows() * m_termWidget->charHeight() + tabH
+    );
 }

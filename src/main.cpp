@@ -13,10 +13,12 @@ int main(int argc, char *argv[]) {
     int window_height = height * char_height;
     
     QApplication app(argc, argv);
+    QCoreApplication::setOrganizationName("cosmic");
+    QCoreApplication::setApplicationName("terminal");
 
     TerminalWindow window;
     window.setWindowTitle("Cosmic Terminal");
-    window.resize(window_width, window_height + tab_bar_height);
+    window.resize(window.sizeHint());
     window.show();
 
     return app.exec();

@@ -279,19 +279,36 @@ void main() {
 
 void TerminalWidget::resizeGL(int w, int h) {
     glViewport(0, 0, w, h);
+    if (!m_tab || !m_tab->model) return;
     m_cols = w / m_charWidth;
     m_rows = h / m_charHeight;
+    if (m_cols == m_tab->model->width() && m_rows == m_tab->model->height()) return;
 
-    if (m_tab && m_tab->model) {
-        m_tab->model->resize(m_cols, m_rows);
-        if (m_tab->masterFd >= 0) {
-            struct winsize ws{};
-            ws.ws_col = m_cols;
-            ws.ws_row = m_rows;
-            ws.ws_xpixel = w;
-            ws.ws_ypixel = h;
-            ioctl(m_tab->masterFd, TIOCSWINSZ, &ws);
-        }
+    m_tab->model->resize(m_cols, m_rows);
+
+    glBindTexture(GL_TEXTURE_2D, textTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, m_cols, m_rows,
+                 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+
+    glBindTexture(GL_TEXTURE_2D, attrFgTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI, m_cols, m_rows,
+                 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, nullptr);
+
+    glBindTexture(GL_TEXTURE_2D, attrBgTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI, m_cols, m_rows,
+                 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, nullptr);
+
+    glBindTexture(GL_TEXTURE_2D, m_glyphUVTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, m_cols, m_rows,
+                 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    if (m_tab->masterFd >= 0) {
+        struct winsize ws{};
+        ws.ws_col = m_cols;
+        ws.ws_row = m_rows;
+        ws.ws_xpixel = w;
+        ws.ws_ypixel = h;
+        ioctl(m_tab->masterFd, TIOCSWINSZ, &ws);
     }
 }
 

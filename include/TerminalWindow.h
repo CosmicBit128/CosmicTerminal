@@ -5,13 +5,13 @@
 #include "SettingsDialog.h"
 #include "TabBar.h"
 
-#include <QWidget>
+#include <QMainWindow>
 #include <QMenuBar>
 #include <QVBoxLayout>
 #include <vector>
 
 
-class TerminalWindow : public QWidget {
+class TerminalWindow : public QMainWindow {
     Q_OBJECT
 public:
     TerminalWindow();
@@ -20,6 +20,8 @@ public:
     void closeTab(int index);
     void newWindow();
     void openPreferences();
+    void resizeWidget(int width, int height);
+    QSize sizeHint() const;
 
 private:
     std::vector<TerminalTab*> m_tabs;
