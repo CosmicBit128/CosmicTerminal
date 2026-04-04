@@ -1,4 +1,5 @@
 #include "TabBar.h"
+#include "Settings.h"
 
 #include <QStyle>
 
@@ -6,9 +7,15 @@
 TabBar::TabBar(QWidget* parent) : QWidget(parent) {
     setFocusPolicy(Qt::NoFocus);
 
+    auto& s = Settings::data();
     m_bar = new QTabBar(this);
     m_bar->setMovable(true);
     m_bar->setTabsClosable(true);
+    m_bar->setExpanding(!s.tabsAlignment);
+    if (s.showTabBar) show();
+    else hide();
+    
+    setAutoFillBackground(true);
 
     m_layout = new QHBoxLayout(this);
     m_layout->setSpacing(2);

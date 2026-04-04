@@ -86,13 +86,12 @@ TerminalTab* TerminalWindow::createTab() {
     tab->notifier = new QSocketNotifier(tab->masterFd, QSocketNotifier::Read);
 
     int index = 0;
-    // std::cout << s.addNewTabs << "\n";
     switch (s.addNewTabs) {
         case 0: index = (int)m_tabs.size(); break;
-        case 1: index = 1; break;
-        case 2: index = m_tabBar->bar()->currentIndex(); break;
+        case 1: index = 0; break;
+        case 2: index = m_tabBar->bar()->currentIndex() + 1; break;
     }
-    m_tabs.push_back(tab);
+    m_tabs.insert(m_tabs.begin() + index, tab);
     m_tabBar->addTab(tab->title, index);
     switchToTab(index);
 
@@ -141,6 +140,7 @@ void TerminalWindow::openPreferences() {
         m_dlg->save();
 
         auto& s = Settings::data();
+        m_tabBar->bar()->setExpanding(!s.tabsAlignment);
         m_tabBar->bar()->setTabsClosable(s.showTabCloseButton);
         m_tabBar->setNewTabButtonVisible(s.showNewTabButton);
         if (s.showTabBar) m_tabBar->show();
