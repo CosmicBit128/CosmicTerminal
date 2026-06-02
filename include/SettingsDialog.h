@@ -25,6 +25,7 @@ private:
     QWidget* createGeneralTab();
     QWidget* createAppearanceTab();
     QWidget* createTabsTab();
+    QWidget* createAboutTab();
     // TODO: Add custom keybindings
     // QWidget* createKeybindingsTab();
     void update();

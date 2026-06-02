@@ -16,6 +16,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) {
     tabs->addTab(createGeneralTab(), "General");
     tabs->addTab(createAppearanceTab(), "Apperance");
     tabs->addTab(createTabsTab(), "Tabs");
+    tabs->addTab(createAboutTab(), "About");
     // tabs->addTab(createApperanceTab(), "Keybindings");
 
     Settings::load();
@@ -124,6 +125,25 @@ QWidget* SettingsDialog::createTabsTab() {
     layout->addWidget(m_showNewTabButton);
     layout->addRow("Add New Tabs", m_addNewTabs);
     layout->addRow("Tabs Alignment", m_tabsAlignment);
+
+    return widget;
+}
+
+QWidget* SettingsDialog::createAboutTab() {
+    auto* widget = new QWidget();
+    auto* layout = new QFormLayout(widget);
+    layout->setFormAlignment(Qt::AlignCenter);
+
+    QLabel* title = new QLabel("Cosmic Terminal");
+    QLabel* author = new QLabel("CosmicBit128");
+    QLabel* copyright = new QLabel("Copyright © 2026 CosmicBit128");
+    QLabel* source = new QLabel("Source: <a href=\"https://github.com/CosmicBit128/CosmicTerminal\">https://github.com/CosmicBit128/CosmicTerminal</a>");
+    source->setOpenExternalLinks(true);
+
+    layout->addWidget(title);
+    layout->addWidget(author);
+    layout->addWidget(copyright);
+    layout->addWidget(source);
 
     return widget;
 }
